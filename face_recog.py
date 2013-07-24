@@ -90,10 +90,6 @@ class FaceRecog(object):
 
         print "Reading the images in from %s" % image_dir
         X,y = self.read_all_subjects(image_dir)
-        # Convert labels to 32bit integers. This is a workaround for 64bit machines,
-        # because the labels will truncated else. This will be fixed in code as
-        # soon as possible, so Python users don't need to know about this.
-        # Thanks to Leo Dirac for reporting:
         y = np.asarray(y, dtype=np.int32)
 
         print "Training..."
