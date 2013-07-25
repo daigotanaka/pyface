@@ -38,6 +38,7 @@ class FaceRecog(object):
         width=320,
         height=240,
         max_distance=60,
+        buffer_size=20,
         display=False):
 
         if not os.path.exists(cascade_file):
@@ -50,12 +51,16 @@ class FaceRecog(object):
         self.max_distance = max_distance
         self.width = width
         self.height = height
+        self.buffer_size = buffer_size
         self.display = display
+
+        self.buffer = self.buffer_size * [None]
 
         self.model = None
         self.last_capture = None
         self.subjects = {}
         self.dir2id = {}
+        self.buffer_count = 0
 
         self.exit_now = False
 
@@ -121,30 +126,29 @@ class FaceRecog(object):
             raise Exception("No model found")
         self.run_camera(self.predict)
 
-    def record(self, image_dir, subject_dir, name, max_recordings=20):
+    def record(self, image_dir, subject_dir, name):
         if not os.path.exists(image_dir):
             raise Exception("image_dir not found")
+        self.run_camera(self.check_exit)
+        self.save_subject(image_dir, subject_dir, name)
 
-        self.max_recordings = max_recordings
-
+    def save_subject(self, image_dir, subject_dir, name):
         os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
         with open(os.path.join(image_dir, subject_dir, "name.txt"), "w") as file:
             file.write(name)
 
-        self.image_dir = image_dir
-        self.subject_dir = subject_dir
-        self.new_face = []
-        self.run_camera(self.record_face)
-
         count = 0
-        os.system("mkdir -p %s" % os.path.join(self.image_dir, self.subject_dir))
-        while os.path.exists(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count))):
+        os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
+        while os.path.exists(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count))):
             count += 1
 
-        for face in self.new_face:
-            cv2.imwrite(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count)), face)
+        for record in self.buffer:
+            if not record:
+                continue
+            face, label, distance = record
+            cv2.imwrite(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count)), face)
             count = count + 1
-        print "%s's %d images saved" % (self.subject_dir, count)
+        print "%s's %d images saved" % (subject_dir, count)
  
     def run_camera(self, callback):
         self.cam = self.create_capture()
@@ -174,7 +178,15 @@ class FaceRecog(object):
                 vis_roi = vis[y1:y2, x1:x2]
 
                 print "Detected face at (%s, %s)-(%s, %s)" % (x1, y1, x2, y2)
+
+                # buffer[i] = (image, label, distance)
+                self.buffer[self.buffer_count] = (resized_roi, None, None)
                 callback(resized_roi)
+
+                self.buffer_count = (self.buffer_count + 1) % self.buffer_size
+
+                # For now process just one face in the frame
+                break
 
             # draw_str(vis, (20, 20))
             if self.display:
@@ -183,10 +195,8 @@ class FaceRecog(object):
         if self.display: 
             cv2.destroyAllWindows()
 
-    def record_face(self, resized_roi):
-        self.new_face.append(resized_roi)
-        count = len(self.new_face)
-        if self.max_recordings and count >= self.max_recordings:
+    def check_exit(self, resized_roi):
+        if self.buffer_count >= self.buffer_size - 1:
             self.exit_now = True
 
     def predict(self, resized_roi): 
