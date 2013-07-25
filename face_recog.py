@@ -37,8 +37,10 @@ class FaceRecog(object):
         video_src,
         width=320,
         height=240,
+        detect_freq=1.0,
         max_distance=60,
-        buffer_size=20,
+        min_distance=60,
+        buffer_size=10,
         display=False):
 
         if not os.path.exists(cascade_file):
@@ -49,6 +51,8 @@ class FaceRecog(object):
         self.proc_size_w = 80
         self.proc_size_h = 80
         self.max_distance = max_distance
+        self.min_distance = min_distance
+        self.detect_freq = detect_freq
         self.width = width
         self.height = height
         self.buffer_size = buffer_size
@@ -56,6 +60,7 @@ class FaceRecog(object):
 
         self.buffer = self.buffer_size * [None]
 
+        self.cam = None
         self.model = None
         self.last_capture = None
         self.subjects = {}
@@ -126,34 +131,49 @@ class FaceRecog(object):
             raise Exception("No model found")
         self.run_camera(self.predict)
 
+    def learn(self, image_dir, subject_dir, name):
+        while True:
+            self.learn_once(image_dir, subject_dir, name)
+
+    def learn_once(self, image_dir, subject_dir, name):
+        """ Run the prediction and learn unknown faces """
+        if self.model is None:
+            raise Exception("No model found")
+        if not os.path.exists(image_dir):
+            raise Exception("image_dir not found")
+ 
+        subject_id = 0
+        self.run_camera(self.predict_and_exit)
+        do_save = True
+        for subject in self.buffer:
+            if subject and subject[2] < self.min_distance:
+                print "I may know this face. Not saving..."
+                do_save = False
+                break
+        if not do_save:
+            return
+
+        while os.path.exists(os.path.join(image_dir, "%s_%d" % (subject_dir, subject_id))):
+            subject_id += 1
+
+        subject_dir_id = "%s_%d" % (subject_dir, subject_id)
+        name_id = "%s #%d" % (name, subject_id)
+        self.save_subject(image_dir, subject_dir_id, name_id)
+        self.update(os.path.join(image_dir, subject_dir_id), name_id)
+
     def record(self, image_dir, subject_dir, name):
         if not os.path.exists(image_dir):
             raise Exception("image_dir not found")
         self.run_camera(self.check_exit)
         self.save_subject(image_dir, subject_dir, name)
 
-    def save_subject(self, image_dir, subject_dir, name):
-        os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
-        with open(os.path.join(image_dir, subject_dir, "name.txt"), "w") as file:
-            file.write(name)
-
-        count = 0
-        os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
-        while os.path.exists(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count))):
-            count += 1
-
-        for record in self.buffer:
-            if not record:
-                continue
-            face, label, distance = record
-            cv2.imwrite(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count)), face)
-            count = count + 1
-        print "%s's %d images saved" % (subject_dir, count)
- 
     def run_camera(self, callback):
-        self.cam = self.create_capture()
+        if not self.cam:
+            self.cam = self.create_capture()
+        self.exit_now = False
+        self.buffer_count = 0
         while not self.exit_now:
-            if self.last_capture and time.time() - self.last_capture < 0.5:
+            if self.last_capture and time.time() - self.last_capture < self.detect_freq:
                 continue
             self.last_capture = time.time()
             ret, img = self.cam.read()
@@ -180,7 +200,7 @@ class FaceRecog(object):
                 print "Detected face at (%s, %s)-(%s, %s)" % (x1, y1, x2, y2)
 
                 # buffer[i] = (image, label, distance)
-                self.buffer[self.buffer_count] = (resized_roi, None, None)
+                self.buffer[self.buffer_count] = [resized_roi, None, None]
                 callback(resized_roi)
 
                 self.buffer_count = (self.buffer_count + 1) % self.buffer_size
@@ -195,6 +215,10 @@ class FaceRecog(object):
         if self.display: 
             cv2.destroyAllWindows()
 
+    def predict_and_exit(self, resized_roi):
+        self.predict(resized_roi)
+        self.check_exit(resized_roi)
+
     def check_exit(self, resized_roi):
         if self.buffer_count >= self.buffer_size - 1:
             self.exit_now = True
@@ -206,6 +230,9 @@ class FaceRecog(object):
             print name, id, distance
         else:
             print "Unknown face (distance=%.2f) (%d %s?)" % (distance, id, name)
+
+        self.buffer[self.buffer_count][1] = id
+        self.buffer[self.buffer_count][2] = distance
         return (id, distance)
 
     def detect(self, img, cascade):
@@ -285,6 +312,25 @@ class FaceRecog(object):
                 print "Unexpected error:", sys.exc_info()[0]
                 raise
 
+    def save_subject(self, image_dir, subject_dir, name):
+        os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
+        with open(os.path.join(image_dir, subject_dir, "name.txt"), "w") as file:
+            file.write(name)
+
+        count = 0
+        os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
+        while os.path.exists(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count))):
+            count += 1
+
+        for record in self.buffer:
+            if not record:
+                continue
+            face, label, distance = record
+            cv2.imwrite(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count)), face)
+            count = count + 1
+        print "%s's %d images saved" % (subject_dir, count)
+
+
 if __name__ == '__main__':
     import getopt
     try:
@@ -325,6 +371,8 @@ if __name__ == '__main__':
             face_recog.save(model_state)
         elif command == "load":
             face_recog.load(model_state)
+        elif command == "learn":
+            face_recog.learn(image_dir, subject_dir, subject_name)
         elif command == "record":
             face_recog.record(image_dir, subject_dir, subject_name)
         elif command == "update":
