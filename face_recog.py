@@ -340,11 +340,15 @@ class FaceRecog(object):
 
 if __name__ == '__main__':
     import getopt
+
+    def show_usage():
+        print "--commands=<command,another_command...> [--image_dir=<dir>] [--model_state=<file>] [--subject_dir=<dir>] [--subject_name=<name>] [--help]"
+
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "", ["commands=", "face_detect=", "image_dir=", "model_state=", "subject_dir=", "subject_name="])
+        opts, args = getopt.getopt(sys.argv[1:], "", ["commands=", "face_detect=", "image_dir=", "model_state=", "subject_dir=", "subject_name=", "help"])
     except getopt.GetoptError as err:
         print str(err)
-        print "--commands <command,another_command...> --image_dir <dir> --model_state <file> --subject_dir <dir> --subject_name <name>"
+        show_usage()
         sys.exit(2)
 
     commands = ""
@@ -354,7 +358,10 @@ if __name__ == '__main__':
     subject_dir = ""
     subject_name = ""
     for o, a in opts:
-        if o == "--commands":
+        if o == "--help":
+            show_usage()
+            sys.exit(0)
+        elif o == "--commands":
             commands = a
         elif o == "--face_detect":
             face_detect = a
