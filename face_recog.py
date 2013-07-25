@@ -57,7 +57,7 @@ class FaceRecog(object):
         self.subjects = {}
         self.dir2id = {}
 
-        self.exitNow = False
+        self.exit_now = False
 
     def create_model(self):
         self.model = cv2.createLBPHFaceRecognizer()
@@ -121,9 +121,11 @@ class FaceRecog(object):
             raise Exception("No model found")
         self.run_camera(self.predict)
 
-    def record(self, image_dir, subject_dir, name):
+    def record(self, image_dir, subject_dir, name, max_recordings=20):
         if not os.path.exists(image_dir):
             raise Exception("image_dir not found")
+
+        self.max_recordings = max_recordings
 
         os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
         with open(os.path.join(image_dir, subject_dir, "name.txt"), "w") as file:
@@ -131,11 +133,22 @@ class FaceRecog(object):
 
         self.image_dir = image_dir
         self.subject_dir = subject_dir
+        self.new_face = []
         self.run_camera(self.record_face)
+
+        count = 0
+        os.system("mkdir -p %s" % os.path.join(self.image_dir, self.subject_dir))
+        while os.path.exists(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count))):
+            count += 1
+
+        for face in self.new_face:
+            cv2.imwrite(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count)), face)
+            count = count + 1
+        print "%s's %d images saved" % (self.subject_dir, count)
  
     def run_camera(self, callback):
         self.cam = self.create_capture()
-        while not self.exitNow:
+        while not self.exit_now:
             if self.last_capture and time.time() - self.last_capture < 0.5:
                 continue
             self.last_capture = time.time()
@@ -171,13 +184,10 @@ class FaceRecog(object):
             cv2.destroyAllWindows()
 
     def record_face(self, resized_roi):
-        count = 0
-        os.system("mkdir -p %s" % os.path.join(self.image_dir, self.subject_dir))
-        while os.path.exists(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count))):
-            count += 1
-        cv2.imwrite(os.path.join(self.image_dir, "%s/%s.jpg" % (self.subject_dir, count)), resized_roi)
-        count = count + 1
-        print "%s's image #%d saved" % (self.subject_dir, count)
+        self.new_face.append(resized_roi)
+        count = len(self.new_face)
+        if self.max_recordings and count >= self.max_recordings:
+            self.exit_now = True
 
     def predict(self, resized_roi): 
         [id, distance] = self.model.predict(np.asarray(resized_roi, dtype=np.uint8))
