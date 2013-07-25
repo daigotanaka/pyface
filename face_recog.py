@@ -66,6 +66,7 @@ class FaceRecog(object):
         self.subjects = {}
         self.dir2id = {}
         self.buffer_count = 0
+        self.last_confident_id = None
 
         self.exit_now = False
 
@@ -234,6 +235,7 @@ class FaceRecog(object):
         [id, distance] = self.model.predict(np.asarray(resized_roi, dtype=np.uint8))
         name = self.subjects.get(id, {}).get("name", "")
         if distance < self.max_distance:
+            self.last_confident_id = id
             print name, id, distance
         else:
             print "Unknown face (distance=%.2f) (%d %s?)" % (distance, id, name)
