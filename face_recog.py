@@ -167,6 +167,13 @@ class FaceRecog(object):
         self.run_camera(self.check_exit)
         self.save_subject(image_dir, subject_dir, name)
 
+    def update_name(self, subject_dir, name):
+        if not os.path.exists(subject_dir):
+            raise Exception("Subject directory not found")
+
+        with open(os.path.join(subject_dir, "name.txt"), "w") as file:
+            file.write(name)
+
     def run_camera(self, callback):
         if not self.cam:
             self.cam = self.create_capture()
@@ -314,9 +321,7 @@ class FaceRecog(object):
 
     def save_subject(self, image_dir, subject_dir, name):
         os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
-        with open(os.path.join(image_dir, subject_dir, "name.txt"), "w") as file:
-            file.write(name)
-
+        self.update_name(os.path.join(image_dir, subject_dir), name)
         count = 0
         os.system("mkdir -p %s" % os.path.join(image_dir, subject_dir))
         while os.path.exists(os.path.join(image_dir, "%s/%s.jpg" % (subject_dir, count))):
@@ -377,5 +382,7 @@ if __name__ == '__main__':
             face_recog.record(image_dir, subject_dir, subject_name)
         elif command == "update":
             face_recog.update(os.path.join(image_dir,subject_dir), subject_name)
+        elif command == "update_name":
+            face_recog.update_name(os.path.join(image_dir,subject_dir), subject_name)
         elif command == "run":
             face_recog.run()
